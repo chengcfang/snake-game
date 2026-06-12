@@ -125,6 +125,8 @@
     font-size: 28px; font-weight: 700; margin-bottom: 6px;
   }
   .overlay .title.gameover { color: #ff6b6b; }
+  .overlay .title.win { color: #ffd93d; text-shadow: 0 0 30px rgba(255,217,61,0.4); animation: winPulse 0.6s ease-in-out infinite alternate; }
+  @keyframes winPulse { 0% { transform: scale(1); } 100% { transform: scale(1.08); } }
   .overlay .sub {
     font-size: 14px; color: #8888aa; margin-bottom: 20px;
   }
@@ -168,6 +170,7 @@
   .dot.playing { background: #00b894; box-shadow: 0 0 8px #00b894; }
   .dot.paused { background: #fdcb6e; }
   .dot.gameover { background: #ff6b6b; }
+  .dot.win { background: #ffd93d; box-shadow: 0 0 8px #ffd93d; }
 
   /* D-Pad */
   .dpad {
@@ -275,6 +278,14 @@
       <div class="title">⏸️ 已暂停</div>
       <div class="sub">按 空格键 继续</div>
     </div>
+
+    <!-- Win Overlay -->
+    <div class="overlay hidden" id="winOverlay">
+      <div class="title win">🎉 恭喜通关！</div>
+      <div class="final-score" id="winScore">0</div>
+      <div class="final-label">得分</div>
+      <button class="btn" id="winRestartBtn">🔄 再来一局</button>
+    </div>
   </div>
 
   <!-- Status -->
@@ -329,12 +340,15 @@
   const finalLabel = document.getElementById('finalLabel');
   const startBtn = document.getElementById('startBtn');
   const restartBtn = document.getElementById('restartBtn');
+  const winOverlay = document.getElementById('winOverlay');
+  const winScore = document.getElementById('winScore');
+  const winRestartBtn = document.getElementById('winRestartBtn');
 
   // ===== State =====
   let W, H, TILE;
   let snake, direction, nextDirection, food;
   let score, highScore;
-  let status; // 'idle' | 'playing' | 'paused' | 'gameover'
+  let status; // 'idle' | 'playing' | 'paused' | 'gameover' | 'win'
   let loopId = null;
   let animTick = 0;
 
@@ -399,12 +413,17 @@
     setStatus('idle');
   }
 
-  function startGame() {
+  function startGame(initialDir) {
     resetGame();
+    if (initialDir) {
+      direction = initialDir;
+      nextDirection = initialDir;
+    }
     status = 'playing';
     startOverlay.classList.add('hidden');
     gameoverOverlay.classList.add('hidden');
     pauseOverlay.classList.add('hidden');
+    winOverlay.classList.add('hidden');
     setStatus('playing');
     startLoop();
   }
@@ -417,6 +436,16 @@
     finalLabel.textContent = score > highScore ? '🎉 新纪录！' : '得分';
     gameoverOverlay.classList.remove('hidden');
     setStatus('gameover');
+    render();
+  }
+
+  function winGame() {
+    status = 'win';
+    stopLoop();
+    saveHighScore();
+    winScore.textContent = score;
+    winOverlay.classList.remove('hidden');
+    setStatus('win');
     render();
   }
 
@@ -457,9 +486,9 @@
       return;
     }
 
-    // Self collision
-    for (const seg of snake) {
-      if (seg.x === newHead.x && seg.y === newHead.y) {
+    // Self collision (exclude tail, it will be removed if no food eaten)
+    for (let i = 0; i < snake.length - 1; i++) {
+      if (snake[i].x === newHead.x && snake[i].y === newHead.y) {
         gameOver();
         return;
       }
@@ -474,6 +503,11 @@
       food = randomFood();
       updateScoreUI();
       saveHighScore();
+      if (!food) { // grid full — win!
+        // need to push the new head permanently before rendering win state
+        winGame();
+        return;
+      }
       restartLoop(); // speed might have changed
     } else {
       snake.pop();
@@ -626,6 +660,7 @@
       playing: '游戏中...',
       paused: '已暂停',
       gameover: '游戏结束',
+      win: '🎉 恭喜通关！',
     };
     statusText.textContent = msgs[s] || '';
   }
@@ -635,7 +670,7 @@
     if (OPPOSITE[dir] === direction) return; // no reverse
     nextDirection = dir;
     if (status === 'idle') {
-      startGame();
+      startGame(dir);
       return;
     }
   }
@@ -661,7 +696,7 @@
     }
 
     if (key === 'r' || key === 'R') {
-      if (status === 'gameover' || status === 'playing' || status === 'paused') {
+      if (status === 'gameover' || status === 'playing' || status === 'paused' || status === 'win') {
         startGame();
       }
     }
@@ -670,12 +705,10 @@
   // ===== Pause / Resume =====
   function togglePause() {
     if (status === 'playing') {
-      status = 'paused';
       stopLoop();
       setStatus('paused');
       render();
     } else if (status === 'paused') {
-      status = 'playing';
       setStatus('playing');
       startLoop();
       render();
@@ -718,6 +751,7 @@
   // ===== Buttons =====
   startBtn.addEventListener('click', startGame);
   restartBtn.addEventListener('click', startGame);
+  winRestartBtn.addEventListener('click', startGame);
 
   // ===== Window events =====
   window.addEventListener('resize', resizeCanvas);
